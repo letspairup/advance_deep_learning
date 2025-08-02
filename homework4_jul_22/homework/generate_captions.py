@@ -1,78 +1,54 @@
+import os
+import json
 from pathlib import Path
+from tqdm import tqdm
+from PIL import Image
 
-import fire
-from matplotlib import pyplot as plt
+from .base_vlm import BaseVLM
 
-from .generate_qa import draw_detections, extract_frame_info
+DATA_DIR = Path(__file__).parent.parent / "data"
 
-
-def generate_caption(info_path: str, view_index: int, img_width: int = 150, img_height: int = 100) -> list:
+def generate_captions(split: str = "valid_grader", ckpt_path: str = "vlm_sft"):
     """
-    Generate caption for a specific view.
+    Generate captions using a fine-tuned model.
+
+    Args:
+        split (str): Dataset split (e.g., 'train', 'valid_grader')
+        ckpt_path (str): Path to the LoRA fine-tuned checkpoint (e.g., 'vlm_sft/checkpoint-5604')
     """
-    import json
+    from .finetune import load
+    model = load(ckpt_path)
 
-    with open(info_path, "r") as f:
-        info = json.load(f)
+    image_dir = DATA_DIR / split
+    image_paths = sorted(image_dir.glob("*.jpg"))
 
-    view_info = info["cameras"][view_index]
-    ego_kart = info["ego_name"]
-    karts = info["karts"]
-    track_name = info["track"]
+    print(f"Found {len(image_paths)} images in {split}")
 
-    captions = []
+    results = []
+    for image_path in tqdm(image_paths, desc=f"Generating captions for {split}"):
+        image = Image.open(image_path).convert("RGB")
 
-    # 1. Ego car
-    captions.append(f"{ego_kart} is the ego car.")
+        try:
+            prompt = "Describe this image."
+            output = model.answer([image], [prompt])
+            caption = output[0].strip()
+        except Exception as e:
+            print(f"❌ Failed for {image_path.name}: {e}")
+            caption = ""
 
-    # 2. Counting karts
-    captions.append(f"There are {len(karts)} karts in the scenario.")
+        if caption:
+            results.append({
+                "image_file": f"{split}/{image_path.name}",
+                "caption": caption
+            })
 
-    # 3. Track name
-    captions.append(f"The track is {track_name}.")
+    out_path = DATA_DIR / split / f"{split}_captions.json"
+    with open(out_path, "w") as f:
+        json.dump(results, f, indent=2)
 
-    # 4. Relative positions
-    for kart in karts:
-        if kart["name"] == ego_kart:
-            continue
-        rel_pos = kart.get("relative_position", "unknown position")
-        captions.append(f"{kart['name']} is {rel_pos} of the ego car.")
-
-    return captions
-
-def check_caption(info_file: str, view_index: int):
-    captions = generate_caption(info_file, view_index)
-
-    print("\nCaption:")
-    print("-" * 50)
-    for i, caption in enumerate(captions):
-        print(f"{i + 1}. {caption}")
-        print("-" * 50)
-
-    info_path = Path(info_file)
-    base_name = info_path.stem.replace("_info", "")
-    image_file = list(info_path.parent.glob(f"{base_name}_{view_index:02d}_im.jpg"))[0]
-
-    annotated_image = draw_detections(str(image_file), info_file)
-
-    plt.figure(figsize=(12, 8))
-    plt.imshow(annotated_image)
-    plt.axis("off")
-    plt.title(f"Frame {extract_frame_info(str(image_file))[0]}, View {view_index}")
-    plt.show()
-
-
-"""
-Usage Example: Visualize QA pairs for a specific file and view:
-   python generate_captions.py check --info_file ../data/valid/00000_info.json --view_index 0
-
-You probably need to add additional commands to Fire below.
-"""
-
-
-def main():
-    fire.Fire({"check": check_caption})
+    print(f"✅ Captions saved to: {out_path}")
 
 
 if __name__ == "__main__":
-    main()
+    from fire import Fire
+    Fire(generate_captions)

@@ -2,7 +2,8 @@ from pathlib import Path
 
 import torch
 from transformers import AutoModelForVision2Seq, AutoProcessor
-from transformers.image_utils import load_image
+
+from PIL import Image
 
 from .data import VQADataset, benchmark
 
@@ -44,11 +45,11 @@ class BaseVLM:
         return self.batched_generate([image_path], [question])[0]
 
     def batched_generate(
-        self,
-        image_paths: list[str],
-        questions: list[str],
-        num_return_sequences: int | None = None,
-        temperature: float = 0,
+            self,
+            image_paths: list[str],
+            questions: list[str],
+            num_return_sequences: int | None = None,
+            temperature: float = 0,
     ) -> list[str] | list[list[str]]:
         """
         Batched version of generate method.
@@ -63,7 +64,7 @@ class BaseVLM:
             List of generated text responses
         """
         # Load images
-        images = [load_image(img_path) for img_path in image_paths]
+        images = [Image.open(img_path).convert("RGB") for img_path in image_paths]
 
         # Create input messages with proper image tokens
         messages = []

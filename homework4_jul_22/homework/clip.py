@@ -94,7 +94,7 @@ class CaptionDatasetForTraining(Dataset):
 
 class CLIP(nn.Module):
     def __init__(
-        self, vision_encoder: nn.Module, text_encoder: nn.Module, proj_dim: int = 64, temperature: float = 0.07
+            self, vision_encoder: nn.Module, text_encoder: nn.Module, proj_dim: int = 64, temperature: float = 0.07
     ):
         super().__init__()
         self.vision_encoder = vision_encoder
@@ -159,12 +159,12 @@ class CLIP(nn.Module):
         self.text_encoder.get_input_embeddings().register_forward_hook(make_inputs_require_grads)
 
     def forward(
-        self,
-        pixel_values: torch.Tensor,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor = None,
-        labels: torch.Tensor = None,
-        **kwargs,
+            self,
+            pixel_values: torch.Tensor,
+            input_ids: torch.Tensor,
+            attention_mask: torch.Tensor = None,
+            labels: torch.Tensor = None,
+            **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass for the CLIP model.
@@ -182,9 +182,9 @@ class CLIP(nn.Module):
 
 
 def compute_clip_loss(
-    outputs: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    labels: torch.Tensor,
-    num_items_in_batch: int | None = None,
+        outputs: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        labels: torch.Tensor,
+        num_items_in_batch: int | None = None,
 ) -> torch.Tensor:
     """
     Compute the loss for the CLIP model.
@@ -205,9 +205,9 @@ def get_target_modules_for_lora(model: nn.Module) -> list[str]:
     for name, module in model.named_modules():
         # if isinstance(module, nn.Linear) and ("vision_encoder" in name and "projection" not in name):
         if (
-            isinstance(module, nn.Linear)
-            and ("vision_encoder" in name or "text_encoder" in name)
-            and "projection" not in name
+                isinstance(module, nn.Linear)
+                and ("vision_encoder" in name or "text_encoder" in name)
+                and "projection" not in name
         ):
             target_modules.append(name)
 
@@ -215,13 +215,13 @@ def get_target_modules_for_lora(model: nn.Module) -> list[str]:
 
 
 def train(
-    data_dir: Path | None = None,
-    output_dir: str = "clip",
-    num_train_epochs: float = 1,
-    per_device_train_batch_size: int = 1024,
-    gradient_accumulation_steps: int = 1,
-    learning_rate: float = 5e-4,
-    num_workers: int = 16,
+        data_dir: Path | None = None,
+        output_dir: str = "clip",
+        num_train_epochs: float = 1,
+        per_device_train_batch_size: int = 1024,
+        gradient_accumulation_steps: int = 1,
+        learning_rate: float = 5e-4,
+        num_workers: int = 16,
 ):
     vlm = BaseVLM()
 

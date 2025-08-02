@@ -1,13 +1,11 @@
 from pathlib import Path
-
 import torch
 import torch.nn as nn
-from peft import LoraConfig, TaskType, get_peft_model, PeftModel
+from peft import LoraConfig, TaskType, get_peft_model
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoProcessor, Trainer, TrainingArguments
-
 from .base_vlm import BaseVLM
 from .data import VQADataset, benchmark
 
@@ -16,18 +14,11 @@ DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is
 processor = AutoProcessor.from_pretrained("HuggingFaceTB/SmolVLM-256M-Instruct")
 
 
-def load(model_name: str = "vlm_sft") -> BaseVLM:
+def load(model_name: str = "vlm_model") -> BaseVLM:
+    from peft import PeftModel
     model_path = Path(__file__).parent / model_name
-    if not model_path.exists():
-        raise ValueError(f"Model path not found: {model_path.resolve()}")
-
     vlm = BaseVLM()
-    vlm.model = PeftModel.from_pretrained(
-        vlm.model,
-        model_path.resolve(),
-        is_trainable=False,
-        local_files_only=True
-    ).to(vlm.device)
+    vlm.model = PeftModel.from_pretrained(vlm.model, model_path).to(vlm.device)
     vlm.model.eval()
     return vlm
 
@@ -38,11 +29,16 @@ def custom_data_collator(features: list[dict[str, torch.Tensor]]) -> dict[str, t
     def pad_tensor(tensor, pad_value):
         return torch.cat([tensor, torch.full((max_length - tensor.shape[0],), pad_value, dtype=tensor.dtype)])
 
+    input_ids = torch.stack([pad_tensor(f["input_ids"], pad_value=processor.tokenizer.eos_token_id) for f in features])
+    attention_mask = torch.stack([pad_tensor(f["attention_mask"], pad_value=0) for f in features])
+    labels = torch.stack([pad_tensor(f["labels"], pad_value=-100) for f in features])
+    pixel_values = torch.stack([f["pixel_values"] for f in features])
+
     return {
-        "input_ids": torch.stack([pad_tensor(f["input_ids"], pad_value=processor.tokenizer.eos_token_id) for f in features]),
-        "attention_mask": torch.stack([pad_tensor(f["attention_mask"], pad_value=0) for f in features]),
-        "labels": torch.stack([pad_tensor(f["labels"], pad_value=-100) for f in features]),
-        "pixel_values": torch.stack([f["pixel_values"] for f in features]),
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "labels": labels,
+        "pixel_values": pixel_values,
     }
 
 
@@ -50,9 +46,6 @@ class VQADatasetForTraining(Dataset):
     def __init__(self, dataset: VQADataset, processor: AutoProcessor):
         self.dataset = dataset
         self.processor = processor
-        self.image_token_id = self.processor.tokenizer.additional_special_tokens_ids[
-            self.processor.tokenizer.additional_special_tokens.index("<image>")
-        ]
         self.processor.tokenizer.pad_token = self.processor.tokenizer.eos_token
 
     def __len__(self):
@@ -61,25 +54,30 @@ class VQADatasetForTraining(Dataset):
     def __getitem__(self, idx: int) -> dict:
         item = self.dataset[idx]
         image = Image.open(item["image_path"]).convert("RGB")
+
         input_message = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": item["question"]}]}]
         prompt = self.processor.apply_chat_template(input_message, add_generation_prompt=True)
         full_text = prompt + item["answer"]
 
-        inputs = self.processor(images=image, text=full_text, return_tensors="pt", padding=True, truncation=True)
+        inputs = self.processor(
+            images=image,
+            text=full_text,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            padding_side="left",
+        )
 
         input_ids = inputs["input_ids"].squeeze(0)
         attention_mask = inputs["attention_mask"].squeeze(0)
 
-        answer_ids = self.processor(images=None, text=item["answer"], return_tensors="pt", truncation=True).input_ids.squeeze(0)
+        # Improved label logic
+        answer_only = self.processor(images=None, text=item["answer"], return_tensors="pt", truncation=True)
+        answer_ids = answer_only.input_ids.squeeze(0)
         answer_len = len(answer_ids)
 
-        labels = input_ids.clone()
-        labels[:-answer_len] = -100
-
-        if input_ids[-1] != self.processor.tokenizer.eos_token_id:
-            input_ids = torch.cat([input_ids, torch.tensor([self.processor.tokenizer.eos_token_id])])
-            attention_mask = torch.cat([attention_mask, torch.tensor([1])])
-            labels = torch.cat([labels, torch.tensor([self.processor.tokenizer.eos_token_id])])
+        labels = torch.full_like(input_ids, -100)
+        labels[-answer_len:] = input_ids[-answer_len:]
 
         return {
             "input_ids": input_ids.long(),
@@ -93,14 +91,14 @@ def train(
         data_dir: Path | None = None,
         train_dataset_name: str = "train",
         output_dir: str = "vlm_sft",
-        num_train_epochs: int = 0.05,
-        per_device_train_batch_size: int = 8,
-        gradient_accumulation_steps: int = 4,
-        learning_rate: float = 5e-4,
-        lora_r: int = 8,
-        lora_alpha: int = 32,
-        lora_dropout: float = 0.0,
-        num_workers: int = 16,
+        num_train_epochs: int = 5,
+        per_device_train_batch_size: int = 16,
+        gradient_accumulation_steps: int = 1,
+        learning_rate: float = 1e-4,
+        lora_r: int = 16,
+        lora_alpha: int = 64,
+        lora_dropout: float = 0.05,
+        num_workers: int = 4,
 ):
     vlm = BaseVLM()
 
@@ -133,9 +131,6 @@ def train(
     train_dataset = VQADataset(train_dataset_name, data_dir)
     train_dataset = VQADatasetForTraining(train_dataset, processor)
 
-    if processor.tokenizer.pad_token is None:
-        processor.tokenizer.pad_token = processor.tokenizer.eos_token
-
     training_args = TrainingArguments(
         output_dir=output_dir,
         logging_dir=output_dir,
@@ -144,13 +139,16 @@ def train(
         per_device_train_batch_size=per_device_train_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=learning_rate,
-        bf16=(DEVICE == "cuda"),
+        bf16=True if DEVICE == "cuda" else False,
         logging_steps=1,
         save_strategy="steps",
-        save_steps=50,
-        save_total_limit=2,
+        save_steps=250,
+        save_total_limit=1,
         label_names=["labels"],
         dataloader_num_workers=num_workers,
+        lr_scheduler_type="cosine",
+        warmup_steps=200,
+        weight_decay=0.01,
     )
 
     trainer = Trainer(
@@ -163,6 +161,7 @@ def train(
     trainer.train()
     trainer.save_model(output_dir)
     writer.close()
+
     return model, processor
 
 
