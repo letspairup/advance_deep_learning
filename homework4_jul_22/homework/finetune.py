@@ -1,7 +1,8 @@
 from pathlib import Path
+
 import torch
 import torch.nn as nn
-from peft import LoraConfig, TaskType, get_peft_model
+from peft import LoraConfig, TaskType, get_peft_model, PeftModel
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
@@ -11,14 +12,22 @@ from .base_vlm import BaseVLM
 from .data import VQADataset, benchmark
 
 DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+
 processor = AutoProcessor.from_pretrained("HuggingFaceTB/SmolVLM-256M-Instruct")
 
 
-def load(ckpt_path: str) -> BaseVLM:
-    from peft import PeftModel
+def load(model_name: str = "vlm_sft") -> BaseVLM:
+    model_path = Path(__file__).parent / model_name
+    if not model_path.exists():
+        raise ValueError(f"Model path not found: {model_path.resolve()}")
 
     vlm = BaseVLM()
-    vlm.model = PeftModel.from_pretrained(vlm.model, ckpt_path).to(vlm.device)
+    vlm.model = PeftModel.from_pretrained(
+        vlm.model,
+        model_path.resolve(),
+        is_trainable=False,
+        local_files_only=True
+    ).to(vlm.device)
     vlm.model.eval()
     return vlm
 
@@ -29,16 +38,11 @@ def custom_data_collator(features: list[dict[str, torch.Tensor]]) -> dict[str, t
     def pad_tensor(tensor, pad_value):
         return torch.cat([tensor, torch.full((max_length - tensor.shape[0],), pad_value, dtype=tensor.dtype)])
 
-    input_ids = torch.stack([pad_tensor(f["input_ids"], processor.tokenizer.eos_token_id) for f in features])
-    attention_mask = torch.stack([pad_tensor(f["attention_mask"], 0) for f in features])
-    labels = torch.stack([pad_tensor(f["labels"], -100) for f in features])
-    pixel_values = torch.stack([f["pixel_values"] for f in features])
-
     return {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "labels": labels,
-        "pixel_values": pixel_values,
+        "input_ids": torch.stack([pad_tensor(f["input_ids"], pad_value=processor.tokenizer.eos_token_id) for f in features]),
+        "attention_mask": torch.stack([pad_tensor(f["attention_mask"], pad_value=0) for f in features]),
+        "labels": torch.stack([pad_tensor(f["labels"], pad_value=-100) for f in features]),
+        "pixel_values": torch.stack([f["pixel_values"] for f in features]),
     }
 
 
@@ -46,8 +50,8 @@ class VQADatasetForTraining(Dataset):
     def __init__(self, dataset: VQADataset, processor: AutoProcessor):
         self.dataset = dataset
         self.processor = processor
-        self.image_token_id = processor.tokenizer.additional_special_tokens_ids[
-            processor.tokenizer.additional_special_tokens.index("<image>")
+        self.image_token_id = self.processor.tokenizer.additional_special_tokens_ids[
+            self.processor.tokenizer.additional_special_tokens.index("<image>")
         ]
         self.processor.tokenizer.pad_token = self.processor.tokenizer.eos_token
 
@@ -57,19 +61,11 @@ class VQADatasetForTraining(Dataset):
     def __getitem__(self, idx: int) -> dict:
         item = self.dataset[idx]
         image = Image.open(item["image_path"]).convert("RGB")
-
         input_message = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": item["question"]}]}]
         prompt = self.processor.apply_chat_template(input_message, add_generation_prompt=True)
         full_text = prompt + item["answer"]
 
-        inputs = self.processor(
-            images=image,
-            text=full_text,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            padding_side="left",
-        )
+        inputs = self.processor(images=image, text=full_text, return_tensors="pt", padding=True, truncation=True)
 
         input_ids = inputs["input_ids"].squeeze(0)
         attention_mask = inputs["attention_mask"].squeeze(0)
@@ -107,6 +103,7 @@ def train(
         num_workers: int = 16,
 ):
     vlm = BaseVLM()
+
     output_dir = Path(__file__).parent / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -147,7 +144,7 @@ def train(
         per_device_train_batch_size=per_device_train_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=learning_rate,
-        bf16=True if DEVICE == "cuda" else False,
+        bf16=(DEVICE == "cuda"),
         logging_steps=1,
         save_strategy="steps",
         save_steps=50,
@@ -166,20 +163,17 @@ def train(
     trainer.train()
     trainer.save_model(output_dir)
     writer.close()
-
     return model, processor
 
 
 def evaluate(model: nn.Module, val_loader: DataLoader) -> float:
     model.eval()
     val_loss = 0
-
     with torch.no_grad():
         for batch in val_loader:
             batch = {k: v.to(DEVICE) for k, v in batch.items()}
             outputs = model(**batch)
             val_loss += outputs.loss.item()
-
     model.train()
     return val_loss / len(val_loader)
 
