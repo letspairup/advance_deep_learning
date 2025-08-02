@@ -6,6 +6,7 @@ from transformers.image_utils import load_image
 
 from .data import VQADataset, benchmark
 
+
 DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
 
