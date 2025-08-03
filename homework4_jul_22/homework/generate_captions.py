@@ -2,12 +2,10 @@ import os
 import json
 from pathlib import Path
 from tqdm import tqdm
-from PIL import Image
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
 def generate_captions(split: str = "valid", ckpt_path: str = "vlm_model"):
-
     from .finetune import load
     model = load(ckpt_path)
 
@@ -18,11 +16,9 @@ def generate_captions(split: str = "valid", ckpt_path: str = "vlm_model"):
 
     results = []
     for image_path in tqdm(image_paths, desc=f"Generating captions for {split}"):
-        image = Image.open(image_path).convert("RGB")
-
         try:
             prompt = "Describe this image."
-            output = model.answer([image], [prompt])
+            output = model.answer([str(image_path)], [prompt])
             caption = output[0].strip()
         except Exception as e:
             print(f"❌ Failed for {image_path.name}: {e}")
