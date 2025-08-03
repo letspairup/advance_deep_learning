@@ -6,7 +6,7 @@ from PIL import Image
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
-def generate_captions(split: str = "valid_grader", ckpt_path: str = "vlm_model"):
+def generate_captions(split: str = "valid", ckpt_path: str = "vlm_model"):
 
     from .finetune import load
     model = load(ckpt_path)
