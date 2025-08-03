@@ -22,7 +22,6 @@ def load(model_name: str = "vlm_model") -> BaseVLM:
     vlm.model.eval()
     return vlm
 
-
 def custom_data_collator(features: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
     max_length = max(f["input_ids"].shape[0] for f in features)
 
@@ -90,7 +89,7 @@ class VQADatasetForTraining(Dataset):
 def train(
         data_dir: Path | None = None,
         train_dataset_name: str = "train",
-        output_dir: str = "vlm_sft",
+        output_dir: str = "vlm_model",
         num_train_epochs: int = 5,
         per_device_train_batch_size: int = 16,
         gradient_accumulation_steps: int = 1,
