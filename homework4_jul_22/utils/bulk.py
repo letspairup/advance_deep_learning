@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from homework4_jul_22.homework.generate_qa import generate_qa_pairs
 
-DATA_DIR = Path("homework4_jul_22/data/train")
+DATA_DIR = Path("../data/train")
 count = 0
 
 for info_file in DATA_DIR.glob("*_info.json"):

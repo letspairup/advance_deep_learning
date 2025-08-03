@@ -2,7 +2,7 @@
 import os
 import json
 
-qa_path = "homework4_jul_22/data/train/balanced_qa_pairs.json"
+qa_path = "../data/train/balanced_qa_pairs.json"
 output_path = "homework4_jul_22/data/train/balanced_qa_pairs_cleaned.json"
 
 with open(qa_path, "r") as f:

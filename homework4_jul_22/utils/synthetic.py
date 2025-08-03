@@ -2,7 +2,7 @@ import json
 import random
 from pathlib import Path
 
-OUTPUT_DIR = Path("homework4_jul_22/data/train")
+OUTPUT_DIR = Path("../data/train")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 TRACKS = ["snowmountain", "zengarden", "cocoa_temple", "abyss", "volcano_island"]

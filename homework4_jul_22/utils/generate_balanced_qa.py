@@ -3,7 +3,7 @@ import json
 from tqdm import tqdm
 from homework4_jul_22.homework.generate_qa import generate_qa_pairs
 
-INPUT_DIR = "homework4_jul_22/data/train"
+INPUT_DIR = "../data/train"
 OUTPUT_QA_FILE = os.path.join(INPUT_DIR, "balanced_qa_pairs.json")
 
 qa_pairs = []

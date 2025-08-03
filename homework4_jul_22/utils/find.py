@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-data_dir = Path("homework4_jul_22/data/train")
+data_dir = Path("../data/train")
 
 valid_files = []
 
