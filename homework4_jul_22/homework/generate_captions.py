@@ -4,18 +4,10 @@ from pathlib import Path
 from tqdm import tqdm
 from PIL import Image
 
-from .base_vlm import BaseVLM
-
 DATA_DIR = Path(__file__).parent.parent / "data"
 
-def generate_captions(split: str = "valid_grader", ckpt_path: str = "vlm_sft"):
-    """
-    Generate captions using a fine-tuned model.
+def generate_captions(split: str = "valid_grader", ckpt_path: str = "vlm_model"):
 
-    Args:
-        split (str): Dataset split (e.g., 'train', 'valid_grader')
-        ckpt_path (str): Path to the LoRA fine-tuned checkpoint (e.g., 'vlm_sft/checkpoint-5604')
-    """
     from .finetune import load
     model = load(ckpt_path)
 

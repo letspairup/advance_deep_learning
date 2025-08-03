@@ -127,16 +127,7 @@ class BaseVLM:
         return cleaned_texts
 
     def answer(self, image_paths, questions) -> list[str]:
-        """
-        Answer multiple questions about an image.
 
-        Args:
-            *image_paths: Paths to the image files
-            *questions: Questions about the image
-
-        Returns:
-            List of answers
-        """
         return self.batched_generate(image_paths, questions)
 
 
