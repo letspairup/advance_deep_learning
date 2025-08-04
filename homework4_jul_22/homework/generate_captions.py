@@ -5,19 +5,22 @@ from tqdm import tqdm
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
-def generate_captions(split: str = "valid", ckpt_path: str = "vlm_model"):
+def generate_captions(split: str = "valid", ckpt_path: str = "vlm_model", max_samples: int = None):
     from .finetune import load
     model = load(ckpt_path)
 
     image_dir = DATA_DIR / split
     image_paths = sorted(image_dir.glob("*.jpg"))
 
-    print(f"Found {len(image_paths)} images in {split}")
+    if max_samples is not None:
+        image_paths = image_paths[:max_samples]
+
+    print(f"Found {len(image_paths)} image(s) to caption in {split}")
 
     results = []
     for image_path in tqdm(image_paths, desc=f"Generating captions for {split}"):
         try:
-            prompt = "Describe this image."
+            prompt = "Describe this scene in one short sentence."
             output = model.answer([str(image_path)], [prompt])
             caption = output[0].strip()
         except Exception as e:

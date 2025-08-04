@@ -80,7 +80,6 @@ class CLIP(nn.Module):
 
     @property
     def model(self):
-        # Required for the grader to call .model.eval()
         return self
 
 
