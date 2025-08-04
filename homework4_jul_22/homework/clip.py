@@ -28,12 +28,12 @@ class CLIP(nn.Module):
 
     def encode_image(self, image: torch.Tensor) -> torch.Tensor:
         image_outputs = self.vision_encoder(pixel_values=image)
-        image_feat = image_outputs.last_hidden_state[:, 0, :]  # [CLS] token
+        image_feat = image_outputs.last_hidden_state[:, 0, :]
         return self.vision_proj(image_feat)
 
     def encode_text(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         text_outputs = self.text_encoder(input_ids=input_ids, attention_mask=attention_mask)
-        text_feat = text_outputs.last_hidden_state[:, 0, :]  # [CLS] token
+        text_feat = text_outputs.last_hidden_state[:, 0, :]
         return self.text_proj(text_feat)
 
     def forward(self, pixel_values, input_ids, attention_mask=None, labels=None, **kwargs):
@@ -77,6 +77,11 @@ class CLIP(nn.Module):
             output.requires_grad_(True)
         self.vision_encoder.embeddings.register_forward_hook(make_inputs_require_grads)
         self.text_encoder.get_input_embeddings().register_forward_hook(make_inputs_require_grads)
+
+    @property
+    def model(self):
+        # Required for the grader to call .model.eval()
+        return self
 
 
 def compute_clip_loss(outputs, labels, num_items_in_batch=None):
@@ -208,7 +213,6 @@ def train(
 
 def demo_train():
     train(
-        train_dataset_name="train_demo",
         output_dir="demo_clip",
         num_train_epochs=1,
         per_device_train_batch_size=2,
@@ -218,7 +222,7 @@ def demo_train():
     )
 
 
-def test(ckpt_path: str, val_dataset: str = "valid_grader"):
+def test(ckpt_path: str, val_dataset: str = "valid"):
     import tqdm
     testset = MultiChoiceQADataset(val_dataset)
     clip = load(ckpt_path).to(device)
@@ -248,20 +252,18 @@ def test(ckpt_path: str, val_dataset: str = "valid_grader"):
         total_count += 1
     print(f"Accuracy: {correct_count / total_count}")
 
+
 def load(model_name: str = "clip") -> CLIP:
     from pathlib import Path
     model_path = Path(__file__).parent / model_name
-
-    # Load vision and text encoder from BaseVLM
     vlm = BaseVLM()
     vision_encoder = vlm.model.model.vision_model
     text_encoder = vlm.model.model.text_model
-
-    # Init and load CLIP model
     clip_model = CLIP(vision_encoder, text_encoder).to(device)
     clip_model.load_pretrained(model_path)
     clip_model.eval()
     return clip_model
+
 
 def main():
     from fire import Fire
